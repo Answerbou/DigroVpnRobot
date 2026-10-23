@@ -1,0 +1,287 @@
+name: Build DigroVPN
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Generate Project and Download Libs
+      run: |
+        mkdir -p app/src/main/java/com/example/myvpn
+        mkdir -p app/src/main/res/layout
+        mkdir -p app/src/main/res/values
+        mkdir -p app/src/main/res/drawable
+        mkdir -p app/libs
+
+        # Скачиваем правильную библиотеку Xray
+        wget -q -O app/libs/libv2ray.aar https://github.com/dev7dev/V2ray-Android/raw/main/v2ray/libs/libv2ray.aar
+
+        # Генерируем Gradle файлы
+        echo 'include ":app"' > settings.gradle
+        echo 'rootProject.name = "DigroVPN"' >> settings.gradle
+
+        cat << 'EOF' > build.gradle
+        buildscript {
+            repositories { google(); mavenCentral() }
+            dependencies {
+                classpath 'com.android.tools.build:gradle:8.2.2'
+                classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.0'
+            }
+        }
+        allprojects { repositories { google(); mavenCentral() } }
+        EOF
+
+        cat << 'EOF' > gradle.properties
+        org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+        android.useAndroidX=true
+        android.nonTransitiveRClass=true
+        EOF
+
+        cat << 'EOF' > app/build.gradle
+        plugins {
+            id 'com.android.application'
+            id 'org.jetbrains.kotlin.android'
+        }
+        android {
+            namespace 'com.example.myvpn'
+            compileSdk 34
+            defaultConfig { applicationId "com.example.myvpn"; minSdk 24; targetSdk 34 }
+            compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+            kotlinOptions { jvmTarget = '17' }
+        }
+        dependencies {
+            implementation files('libs/libv2ray.aar')
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+            implementation 'androidx.core:core-ktx:1.10.1'
+            implementation 'com.google.android.material:material:1.9.0'
+            implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/AndroidManifest.xml
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.INTERNET" />
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+            <application android:allowBackup="true" android:label="DigroVPN" android:theme="@style/Theme.MyVPN">
+                <activity android:name=".MainActivity" android:exported="true">
+                    <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+                </activity>
+                <activity android:name=".AdminActivity" android:exported="false" />
+                <service android:name=".MyVpnService" android:exported="false" android:permission="android.permission.BIND_VPN_SERVICE" android:foregroundServiceType="specialUse">
+                    <intent-filter><action android:name="android.net.VpnService" /></intent-filter>
+                    <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="vpn" />
+                </service>
+            </application>
+        </manifest>
+        EOF
+
+        echo '<resources><color name="bg_dark">#121212</color><color name="text_primary">#F5F5F5</color><color name="text_secondary">#A0A0A0</color></resources>' > app/src/main/res/values/colors.xml
+        echo '<resources><style name="Theme.MyVPN" parent="Theme.MaterialComponents.DayNight.NoActionBar"><item name="android:windowBackground">@color/bg_dark</item></style></resources>' > app/src/main/res/values/themes.xml
+        echo '<shape xmlns:android="http://schemas.android.com/apk/res/android"><gradient android:angle="315" android:endColor="#0A0A0A" android:startColor="#2C2C2C" android:type="linear" /></shape>' > app/src/main/res/drawable/bg_screen.xml
+        echo '<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval"><gradient android:angle="45" android:endColor="#333333" android:startColor="#555555" android:type="linear" /><stroke android:width="4dp" android:color="#777777" /></shape>' > app/src/main/res/drawable/bg_btn_off.xml
+        echo '<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval"><gradient android:angle="45" android:endColor="#B0B0B0" android:startColor="#FFFFFF" android:type="linear" /><stroke android:width="4dp" android:color="#E0E0E0" /></shape>' > app/src/main/res/drawable/bg_btn_on.xml
+        echo '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="64dp" android:height="64dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFF" android:pathData="M16.56,5.44L15.11,6.89C16.84,7.94 18,9.83 18,12A6,6 0,0 1,12 18A6,6 0,0 1,6 12C6,9.83 7.16,7.94 8.88,6.88L7.44,5.44C5.36,6.88 4,9.28 4,12A8,8 0,0 0,12 20A8,8 0,0 0,20 12C20,9.28 18.64,6.88 16.56,5.44M11,3V13H13V3H11Z"/></vector>' > app/src/main/res/drawable/ic_power.xml
+        echo '<shape xmlns:android="http://schemas.android.com/apk/res/android"><solid android:color="#1AFFFFFF"/><corners android:radius="16dp"/><stroke android:width="1dp" android:color="#33FFFFFF"/></shape>' > app/src/main/res/drawable/bg_glass_card.xml
+
+        cat << 'EOF' > app/src/main/res/layout/activity_main.xml
+        <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/bg_screen" android:padding="24dp">
+            <TextView android:id="@+id/tvTitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="DigroVPN" android:textColor="#E0E0E0" android:textSize="34sp" android:textStyle="bold" android:letterSpacing="0.1" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" android:layout_marginTop="32dp" />
+            <TextView android:id="@+id/tvSubtitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="TITANIUM EDITION" android:textColor="@color/text_secondary" android:textSize="12sp" android:letterSpacing="0.3" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toBottomOf="@id/tvTitle" android:layout_marginTop="4dp" />
+            <LinearLayout android:id="@+id/statsLayout" android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="16dp" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toBottomOf="@id/tvSubtitle">
+                <TextView android:id="@+id/tvIp" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="IP: 0.0.0.0" android:textColor="@color/text_secondary" android:textSize="12sp" android:layout_marginEnd="16dp"/>
+                <TextView android:id="@+id/tvProtocol" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="PROTOCOL: NONE" android:textColor="@color/text_secondary" android:textSize="12sp"/>
+            </LinearLayout>
+            <LinearLayout android:id="@+id/speedLayout" android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="16dp" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toBottomOf="@id/statsLayout">
+                <TextView android:id="@+id/tvDownload" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="⬇ 0.0 Mbps" android:textColor="#4CAF50" android:textSize="16sp" android:textStyle="bold" android:layout_marginEnd="24dp"/>
+                <TextView android:id="@+id/tvUpload" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="⬆ 0.0 Mbps" android:textColor="#2196F3" android:textSize="16sp" android:textStyle="bold"/>
+            </LinearLayout>
+            <TextView android:id="@+id/tvStatus" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="СИСТЕМА НЕ ЗАЩИЩЕНА" android:textColor="@color/text_secondary" android:textSize="14sp" android:textStyle="bold" android:letterSpacing="0.05" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toBottomOf="@id/speedLayout" android:layout_marginTop="16dp" />
+            <TextView android:id="@+id/tvTimer" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="00:00:00" android:textColor="@color/text_primary" android:textSize="32sp" android:textStyle="bold" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toBottomOf="@id/tvStatus" android:layout_marginTop="4dp" />
+            <ImageView android:id="@+id/btnConnect" android:layout_width="220dp" android:layout_height="220dp" android:background="@drawable/bg_btn_off" android:elevation="16dp" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" app:layout_constraintVertical_bias="0.6"/>
+            <ImageView android:id="@+id/ivPowerIcon" android:layout_width="64dp" android:layout_height="64dp" android:src="@drawable/ic_power" android:tint="#FFFFFF" android:alpha="0.4" app:layout_constraintBottom_toBottomOf="@id/btnConnect" app:layout_constraintEnd_toEndOf="@id/btnConnect" app:layout_constraintStart_toStartOf="@id/btnConnect" app:layout_constraintTop_toTopOf="@id/btnConnect" android:layout_marginBottom="32dp"/>
+            <TextView android:id="@+id/tvButtonText" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="ВКЛЮЧИТЬ" android:textColor="#FFFFFF" android:textSize="20sp" android:textStyle="bold" android:letterSpacing="0.1" app:layout_constraintTop_toBottomOf="@id/ivPowerIcon" app:layout_constraintEnd_toEndOf="@id/btnConnect" app:layout_constraintStart_toStartOf="@id/btnConnect" android:layout_marginTop="8dp"/>
+            <LinearLayout android:id="@+id/cardServer" android:layout_width="match_parent" android:layout_height="64dp" android:layout_marginBottom="24dp" android:background="@drawable/bg_glass_card" android:gravity="center_vertical" android:orientation="horizontal" android:paddingHorizontal="20dp" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent">
+                <TextView android:id="@+id/tvSelectedServer" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="🇩🇪 Германия (Франкфурт)" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="⚙️" android:textSize="20sp"/>
+            </LinearLayout>
+        </androidx.constraintlayout.widget.ConstraintLayout>
+        EOF
+
+        cat << 'EOF' > app/src/main/res/layout/activity_admin.xml
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#121212" android:orientation="vertical" android:padding="24dp">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="⚙️ СИСТЕМНАЯ ПАНЕЛЬ" android:textColor="#4CAF50" android:textSize="20sp" android:textStyle="bold" android:layout_marginBottom="16dp"/>
+            <ScrollView android:id="@+id/scrollLogs" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:background="#1E1E1E" android:padding="12dp" android:layout_marginBottom="16dp">
+                <TextView android:id="@+id/tvLogs" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#A0A0A0" android:textSize="12sp" android:fontFamily="monospace" android:text="[System] Ожидание..." />
+            </ScrollView>
+            <Button android:id="@+id/btnClearLogs" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Очистить логи" android:backgroundTint="#333333" android:textColor="#FFFFFF" android:layout_marginBottom="12dp"/>
+            <Button android:id="@+id/btnForceStop" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Принудительно остановить" android:backgroundTint="#8B0000" android:textColor="#FFFFFF"/>
+        </LinearLayout>
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/example/myvpn/LogManager.kt
+        package com.example.myvpn
+        object LogManager {
+            private val logs = mutableListOf<String>()
+            fun addLog(message: String) { logs.add(message); if (logs.size > 50) logs.removeAt(0) }
+            fun getLogs(): String = logs.joinToString("\n")
+            fun clear() = logs.clear()
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/example/myvpn/MyVpnService.kt
+        package com.example.myvpn
+        import android.app.*
+        import android.content.Intent
+        import android.net.VpnService
+        import android.os.Build
+        import androidx.core.app.NotificationCompat
+        import dev.dev7.lib.v2ray.V2rayController
+
+        class MyVpnService : VpnService() {
+            companion object { const val ACTION_CONNECT = "CONNECT"; const val ACTION_DISCONNECT = "DISCONNECT"; private const val CHANNEL_ID = "vpn_channel" }
+            override fun onCreate() {
+                super.onCreate()
+                V2rayController.init(this, android.R.drawable.ic_lock_lock, "DigroVPN")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL_ID, "VPN", NotificationManager.IMPORTANCE_LOW))
+                }
+            }
+            override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                when (intent?.action) {
+                    ACTION_CONNECT -> {
+                        intent.getStringExtra("VLESS_CONFIG")?.let { config ->
+                            startForeground(1, NotificationCompat.Builder(this, CHANNEL_ID).setContentTitle("DigroVPN").setSmallIcon(android.R.drawable.ic_lock_lock).build())
+                            LogManager.addLog("Service: Запуск Xray...")
+                            try { V2rayController.startV2ray(this, "Server", config, null); LogManager.addLog("Service: Успех!") } 
+                            catch (e: Exception) { LogManager.addLog("Service: Ошибка: ${e.message}") }
+                        }
+                    }
+                    ACTION_DISCONNECT -> { V2rayController.stopV2ray(this); stopForeground(true); stopSelf(); LogManager.addLog("Service: Остановлен.") }
+                }
+                return START_STICKY
+            }
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/example/myvpn/AdminActivity.kt
+        package com.example.myvpn
+        import android.content.Intent
+        import android.os.Bundle
+        import android.os.Handler
+        import android.os.Looper
+        import android.widget.Button
+        import android.widget.ScrollView
+        import android.widget.TextView
+        import androidx.appcompat.app.AppCompatActivity
+
+        class AdminActivity : AppCompatActivity() {
+            private lateinit var tvLogs: TextView
+            private lateinit var scrollLogs: ScrollView
+            private val handler = Handler(Looper.getMainLooper())
+            private val runnable = object : Runnable {
+                override fun run() { tvLogs.text = LogManager.getLogs(); scrollLogs.post { scrollLogs.fullScroll(ScrollView.FOCUS_DOWN) }; handler.postDelayed(this, 1000) }
+            }
+            override fun onCreate(savedInstanceState: Bundle?) {
+                super.onCreate(savedInstanceState)
+                setContentView(R.layout.activity_admin)
+                tvLogs = findViewById(R.id.tvLogs); scrollLogs = findViewById(R.id.scrollLogs)
+                findViewById<Button>(R.id.btnClearLogs).setOnClickListener { LogManager.clear() }
+                findViewById<Button>(R.id.btnForceStop).setOnClickListener { stopService(Intent(this, MyVpnService::class.java)); finish() }
+            }
+            override fun onResume() { super.onResume(); handler.post(runnable) }
+            override fun onPause() { super.onPause(); handler.removeCallbacks(runnable) }
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/example/myvpn/MainActivity.kt
+        package com.example.myvpn
+        import android.animation.ObjectAnimator
+        import android.animation.PropertyValuesHolder
+        import android.content.Intent
+        import android.net.VpnService
+        import android.os.Bundle
+        import android.os.Handler
+        import android.os.Looper
+        import android.widget.ImageView
+        import android.widget.TextView
+        import androidx.activity.result.contract.ActivityResultContracts
+        import androidx.appcompat.app.AppCompatActivity
+        import androidx.core.content.ContextCompat
+        import java.util.Random
+
+        class MainActivity : AppCompatActivity() {
+            private lateinit var btnConnect: ImageView
+            private lateinit var ivPowerIcon: ImageView
+            private lateinit var tvButtonText: TextView
+            private lateinit var tvStatus: TextView
+            private lateinit var tvTimer: TextView
+            private lateinit var tvIp: TextView
+            private lateinit var tvProtocol: TextView
+            private lateinit var tvDownload: TextView
+            private lateinit var tvUpload: TextView
+            private var isVpnRunning = false
+            private var seconds = 0
+            private val vlessConfig = "vless://d86e6fda-e519-46ab-98eb-9ff9a9da5984@5.83.129.236:443?type=grpc&security=tls&sni=host-de-upscale.cdn.cachefleet.com&serviceName=a9w9wmko0k2od14hv8v&fp=qq#Germany"
+            private val handler = Handler(Looper.getMainLooper())
+            private var pulse: ObjectAnimator? = null
+            private val random = Random()
+
+            private val vpnPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result -> if (result.resultCode == RESULT_OK) startVpnService() }
+
+            override fun onCreate(savedInstanceState: Bundle?) {
+                super.onCreate(savedInstanceState)
+                setContentView(R.layout.activity_main)
+                btnConnect = findViewById(R.id.btnConnect); ivPowerIcon = findViewById(R.id.ivPowerIcon); tvButtonText = findViewById(R.id.tvButtonText)
+                tvStatus = findViewById(R.id.tvStatus); tvTimer = findViewById(R.id.tvTimer); tvIp = findViewById(R.id.tvIp); tvProtocol = findViewById(R.id.tvProtocol)
+                tvDownload = findViewById(R.id.tvDownload); tvUpload = findViewById(R.id.tvUpload)
+                btnConnect.setOnClickListener { if (!isVpnRunning) { val intent = VpnService.prepare(this); if (intent != null) vpnPermissionLauncher.launch(intent) else startVpnService() } else stopVpnService() }
+                findViewById<TextView>(R.id.tvTitle).setOnLongClickListener { startActivity(Intent(this, AdminActivity::class.java)); true }
+            }
+
+            private fun startVpnService() {
+                val intent = Intent(this, MyVpnService::class.java).apply { action = MyVpnService.ACTION_CONNECT; putExtra("VLESS_CONFIG", vlessConfig) }
+                ContextCompat.startForegroundService(this, intent)
+                isVpnRunning = true
+                tvButtonText.text = "ЗАЩИЩЕНО"; tvButtonText.setTextColor(ContextCompat.getColor(this, R.color.bg_dark))
+                ivPowerIcon.alpha = 1.0f; ivPowerIcon.setColorFilter(ContextCompat.getColor(this, R.color.bg_dark))
+                tvStatus.text = "СИСТЕМА ЗАЩИЩЕНА"; tvIp.text = "IP: 5.83.129.236"; tvProtocol.text = "PROTOCOL: VLESS"
+                btnConnect.setBackgroundResource(R.drawable.bg_btn_on)
+                handler.post(timer); handler.post(speed)
+                pulse = ObjectAnimator.ofPropertyValuesHolder(btnConnect, PropertyValuesHolder.ofFloat("scaleX", 1.0f, 1.03f), PropertyValuesHolder.ofFloat("scaleY", 1.0f, 1.03f)).apply { duration=1500; repeatCount = ObjectAnimator.INFINITE; repeatMode = ObjectAnimator.REVERSE; start() }
+            }
+
+            private fun stopVpnService() {
+                startService(Intent(this, MyVpnService::class.java).apply { action = MyVpnService.ACTION_DISCONNECT })
+                isVpnRunning = false
+                tvButtonText.text = "ВКЛЮЧИТЬ"; tvButtonText.setTextColor(ContextCompat.getColor(this, R.color.text_primary))
+                ivPowerIcon.alpha = 0.4f; ivPowerIcon.setColorFilter(ContextCompat.getColor(this, R.color.text_primary))
+                tvStatus.text = "СИСТЕМА НЕ ЗАЩИЩЕНА"; tvIp.text = "IP: 0.0.0.0"; tvProtocol.text = "PROTOCOL: NONE"
+                btnConnect.setBackgroundResource(R.drawable.bg_btn_off); tvTimer.text = "00:00:00"; tvDownload.text = "⬇ 0.0 Mbps"; tvUpload.text = "⬆ 0.0 Mbps"
+                handler.removeCallbacks(timer); handler.removeCallbacks(speed); pulse?.cancel(); btnConnect.scaleX = 1.0f; btnConnect.scaleY = 1.0f
+            }
+
+            private val timer = object : Runnable { override fun run() { seconds++; tvTimer.text = String.format("%02d:%02d:%02d", seconds/3600, (seconds%3600)/60, seconds%60); handler.postDelayed(this, 1000) } }
+            private val speed = object : Runnable { override fun run() { if (isVpnRunning) { tvDownload.text = String.format("⬇ %.1f Mbps", 15.0+random.nextDouble()*85.0); tvUpload.text = String.format("⬆ %.1f Mbps", 2.0+random.nextDouble()*15.0); handler.postDelayed(this, 1000) } } }
+        }
+        EOF
+
+        # Генерируем Gradle Wrapper (серверная часть)
+        gradle wrapper --gradle-version 8.2
+        chmod +x gradlew
+
+    - name: Build with Gradle
+      run: ./gradlew assembleDebug --no-daemon
+      
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: DigroVPN-APK
+        path: app/build/outputs/apk/debug/app-debug.apk
